@@ -109,6 +109,7 @@ enum OverlayFormat {
 typedef struct OverlayContext {
     const AVClass *class;
     int x, y;                   ///< position of overlayed picture
+	int nEnable;
 
     int allow_packed_rgb;
     uint8_t main_is_packed_rgb;
@@ -180,31 +181,6 @@ static int set_expr(AVExpr **pexpr, const char *expr, const char *option, void *
 
     av_expr_free(old);
     return 0;
-}
-
-static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
-                           char *res, int res_len, int flags)
-{
-    OverlayContext *s = ctx->priv;
-    int ret;
-
-    if      (!strcmp(cmd, "x"))
-        ret = set_expr(&s->x_pexpr, args, cmd, ctx);
-    else if (!strcmp(cmd, "y"))
-        ret = set_expr(&s->y_pexpr, args, cmd, ctx);
-    else
-        ret = AVERROR(ENOSYS);
-
-    if (ret < 0)
-        return ret;
-
-    if (s->eval_mode == EVAL_MODE_INIT) {
-        eval_expr(ctx);
-        av_log(ctx, AV_LOG_VERBOSE, "x:%f xi:%d y:%f yi:%d\n",
-               s->var_values[VAR_X], s->x,
-               s->var_values[VAR_Y], s->y);
-    }
-    return ret;
 }
 
 static int query_formats(AVFilterContext *ctx)
@@ -590,7 +566,8 @@ static AVFrame *do_blend(AVFilterContext *ctx, AVFrame *mainpic,
 {
     OverlayContext *s = ctx->priv;
     AVFilterLink *inlink = ctx->inputs[0];
-
+	if (!s->nEnable)
+		return mainpic;
     if (s->eval_mode == EVAL_MODE_FRAME) {
         int64_t pos = av_frame_get_pkt_pos(mainpic);
 
@@ -632,6 +609,8 @@ static av_cold int init(AVFilterContext *ctx)
 {
     OverlayContext *s = ctx->priv;
 
+	s->nEnable = 1;
+
     if (s->allow_packed_rgb) {
         av_log(ctx, AV_LOG_WARNING,
                "The rgb option is deprecated and is overriding the format option, use format instead\n");
@@ -648,6 +627,40 @@ static av_cold int init(AVFilterContext *ctx)
 
     s->dinput.process = do_blend;
     return 0;
+}
+
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+	char *res, int res_len, int flags)
+{
+	OverlayContext *s = ctx->priv;
+	int ret = 0;
+
+	//	fprintf(stderr, "overlay_process_command:%s;arg,%s;res_len:%d\n", cmd, args, res_len);
+
+	if (!strcmp(cmd, "x"))
+		ret = set_expr(&s->x_pexpr, args, cmd, ctx);
+	else if (!strcmp(cmd, "y"))
+		ret = set_expr(&s->y_pexpr, args, cmd, ctx);
+	else if (!strcmp(cmd, "disable")){
+		if (!strncmp(args, "1", 1))
+			s->nEnable = 0;
+		else
+			s->nEnable = 1;
+	}
+	else
+		ret = AVERROR(ENOSYS);
+
+	if (ret < 0)
+		return ret;
+
+	if (s->eval_mode == EVAL_MODE_INIT) {
+		eval_expr(ctx);
+		av_log(ctx, AV_LOG_VERBOSE, "x:%f xi:%d y:%f yi:%d\n",
+			s->var_values[VAR_X], s->x,
+			s->var_values[VAR_Y], s->y);
+	}
+
+	return ret;
 }
 
 #define OFFSET(x) offsetof(OverlayContext, x)
