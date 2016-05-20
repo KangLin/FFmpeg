@@ -635,8 +635,6 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 	OverlayContext *s = ctx->priv;
 	int ret = 0;
 
-	//	fprintf(stderr, "overlay_process_command:%s;arg,%s;res_len:%d\n", cmd, args, res_len);
-
 	if (!strcmp(cmd, "x"))
 		ret = set_expr(&s->x_pexpr, args, cmd, ctx);
 	else if (!strcmp(cmd, "y"))

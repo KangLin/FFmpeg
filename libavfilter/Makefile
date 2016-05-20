@@ -311,6 +311,7 @@ OBJS-$(CONFIG_SMPTEBARS_FILTER)              += vsrc_testsrc.o
 OBJS-$(CONFIG_SMPTEHDBARS_FILTER)            += vsrc_testsrc.o
 OBJS-$(CONFIG_TESTSRC_FILTER)                += vsrc_testsrc.o
 OBJS-$(CONFIG_TESTSRC2_FILTER)               += vsrc_testsrc.o
+OBJS-$(CONFIG_WATERMARK_FILTER)              += vsrc_watermark.o
 
 # multimedia filters
 OBJS-$(CONFIG_ADRAWGRAPH_FILTER)             += f_drawgraph.o
