@@ -12037,6 +12037,29 @@ in [-30,0] will filter edges. Default value is 0.
 If a chroma option is not explicitly set, the corresponding luma value
 is set.
 
+@section snapshot
+
+it can save a snapshot picture. Supports .png, .jpg, .bmp formats
+Snapshot with process_command api.
+
+It accepts the following options:
+
+@table @option
+@item directory
+Save the snapshot directory. Default value is snapshot.
+@item filename
+Snapshot file name
+@end table
+
+@example
+After ffmpeg start, when you want a snapshot, enter the following
+command at the command console:
+
+csnapshot -1 filename snapshot.png
+
+Save the snapshot to the snapshot directory.
+@end example
+
 @section ssim
 
 Obtain the SSIM (Structural SImilarity Metric) between two input videos.
