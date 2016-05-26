@@ -515,6 +515,8 @@ extern int         nb_output_files;
 extern FilterGraph **filtergraphs;
 extern int        nb_filtergraphs;
 
+extern char* g_command_config_filename;
+
 extern char *vstats_filename;
 extern char *sdp_filename;
 

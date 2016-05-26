@@ -147,6 +147,9 @@ int         nb_output_files   = 0;
 FilterGraph **filtergraphs;
 int        nb_filtergraphs;
 
+FILE* g_command_config_file = NULL;
+char* g_command_config_filename = "CommandConfigFile.txt";
+
 #if HAVE_TERMIOS_H
 
 /* init terminal so that we can grab keys */
@@ -400,7 +403,29 @@ void term_init(void)
 /* read a key without blocking */
 static int read_key(void)
 {
-    unsigned char ch;
+    char ch;
+    if (!g_command_config_file && g_command_config_filename)
+        g_command_config_file = fopen(g_command_config_filename, "rt");
+    if (g_command_config_file){
+        ch = getc(g_command_config_file);
+        if (EOF == ch){
+            if (0 != fclose(g_command_config_file)){
+                av_log(NULL, AV_LOG_ERROR, "close file faile:%s\n", g_command_config_filename);
+            }
+            if (0 != remove(g_command_config_filename)){
+                av_log(NULL, AV_LOG_ERROR, "remove file faile:%s\n", g_command_config_filename);
+            }
+
+            g_command_config_file = NULL;
+            return '\n';
+        }
+        else
+            return ch;
+    }
+
+    if(run_as_daemon)
+        return -1;
+
 #if HAVE_TERMIOS_H
     int n = 1;
     struct timeval tv;
@@ -3450,7 +3475,7 @@ static int check_keyboard_interaction(int64_t cur_time)
     if (received_nb_signals)
         return AVERROR_EXIT;
     /* read_key() returns 0 on EOF */
-    if(cur_time - last_time >= 100000 && !run_as_daemon){
+    if(cur_time - last_time >= 100000){
         key =  read_key();
         last_time = cur_time;
     }else

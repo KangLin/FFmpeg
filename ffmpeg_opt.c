@@ -3129,6 +3129,8 @@ const OptionDef options[] = {
         "force format", "fmt" },
     { "y",              OPT_BOOL,                                    {              &file_overwrite },
         "overwrite output files" },
+    { "ic",           HAS_ARG | OPT_STRING,                          {              &g_command_config_filename },
+        "read interaction command from a file. default is CommandConfigFile.txt", "filename" },
     { "n",              OPT_BOOL,                                    {              &no_file_overwrite },
         "never overwrite output files" },
     { "ignore_unknown", OPT_BOOL,                                    {              &ignore_unknown_streams },
