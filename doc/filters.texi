@@ -15603,6 +15603,20 @@ ffmpeg -copyts -vsync 0 -segment_time_metadata 1 -i input.ffconcat -vf select=co
 @end example
 @end itemize
 
+Snapshot to the file.
+
+These filters accept the following options:
+@table @option
+@item filename
+Set the snapshot filename.
+@example
+ffmpeg -re -i input.flv -vf select -f mpegts udp://127.0.0.1:1234
+Input command in command line:
+cselect -1 filename s.png
+Then the snapshot is saved then snapshot/s.png in current directory.
+@end example
+@end table
+
 @section sendcmd, asendcmd
 
 Send commands to filters in the filtergraph.

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2011 Stefano Sabatini
+ * Copyright (c) 2016 KangLin<kl222@126.com>
  *
  * This file is part of FFmpeg.
  *
@@ -29,6 +30,8 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixelutils.h"
+#include "libavformat/avformat.h"
+#include "libavformat/os_support.h"
 #include "avfilter.h"
 #include "audio.h"
 #include "formats.h"
@@ -151,6 +154,16 @@ typedef struct SelectContext {
     double select;
     int select_out;                 ///< mark the selected output pad index
     int nb_outputs;
+
+    //snapshot
+    char *dir;
+    char *filename;
+    int bEnable;
+    AVFormatContext *ofmt_ctx;
+    AVCodecContext *codec_ctx;
+    AVCodec *codec;
+    AVPacket *out_packet;
+
 } SelectContext;
 
 #define OFFSET(x) offsetof(SelectContext, x)
@@ -160,10 +173,13 @@ static const AVOption filt_name##_options[] = {                     \
     { "e",    "set an expression to use for selecting frames", OFFSET(expr_str), AV_OPT_TYPE_STRING, { .str = "1" }, .flags=FLAGS }, \
     { "outputs", "set the number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT, {.i64 = 1}, 1, INT_MAX, .flags=FLAGS }, \
     { "n",       "set the number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT, {.i64 = 1}, 1, INT_MAX, .flags=FLAGS }, \
+    { "directory", NULL, OFFSET(dir), AV_OPT_TYPE_STRING, { .str = "snapshot" }, .flags = FLAGS }, \
+    { "filename", NULL, OFFSET(filename), AV_OPT_TYPE_STRING,{ .str = "snapshot.png" },.flags = FLAGS }, \
     { NULL }                                                            \
 }
 
 static int request_frame(AVFilterLink *outlink);
+static int snapshot_save(AVFilterContext *ctx, AVFrame* frame);
 
 static av_cold int init(AVFilterContext *ctx)
 {
@@ -396,6 +412,15 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     AVFilterContext *ctx = inlink->dst;
     SelectContext *select = ctx->priv;
 
+    //snapshot 
+    if (select->bEnable) {
+        int ret = snapshot_save(ctx, frame);
+        if (ret) {
+            av_log(ctx, AV_LOG_ERROR, "snapshot save fail:%d\n", ret);
+            select->bEnable = 0;
+        }
+    }
+
     select_frame(ctx, frame);
     if (select->select)
         return ff_filter_frame(ctx->outputs[select->select_out], frame);
@@ -448,6 +473,145 @@ static int query_formats(AVFilterContext *ctx)
             return ret;
     }
     return 0;
+}
+
+
+static int snapshot_close(AVFilterContext *ctx) {
+    int ret = 0;
+    SelectContext *s = ctx->priv;
+
+    avcodec_free_context(&s->codec_ctx);
+    s->codec_ctx = NULL;
+
+    if (s->ofmt_ctx) {
+        av_packet_free(&s->out_packet);
+        avformat_free_context(s->ofmt_ctx);
+        s->ofmt_ctx = NULL;
+    }
+    return ret;
+}
+
+static int snapshot_open(AVFilterContext *ctx, AVFrame* frame) {
+    int ret = 0;
+    SelectContext *s = ctx->priv;
+    AVStream *out_stream = NULL;
+    char f[1024];
+    f[0] = 0;
+    if (s->ofmt_ctx)
+        return 0;
+
+    if (s->dir) {
+        av_strlcpy(f, s->dir, 1024);
+        if (mkdir(s->dir, 0777) == -1 && errno != EEXIST) {
+            av_log(ctx, AV_LOG_ERROR, "Could not create directory %s with use_localtime_mkdir\n", s->dir);
+            return AVERROR(errno);
+        }
+        av_strlcat(f, "/", 1024);
+    }
+    if (s->filename)
+        av_strlcat(f, s->filename, 1024);
+    else {
+        av_log(ctx, AV_LOG_ERROR, "please set filename.\n");
+        return AVERROR(EPERM);
+    }
+
+    ret = avformat_alloc_output_context2(&s->ofmt_ctx, NULL, NULL, f);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "open file is fail:%d;filename:%s\n", ret, f);
+        return ret;
+    }
+    if (!s->ofmt_ctx) {
+        av_log(ctx, AV_LOG_ERROR, "open file is fail:%d\n", ret);
+        return ret;
+    }
+
+    s->out_packet = av_packet_alloc();
+
+    do {
+        s->codec = avcodec_find_encoder(s->ofmt_ctx->oformat->video_codec);
+        if (!s->codec) {
+            av_log(ctx, AV_LOG_ERROR, "encodec isn't found.codec id:%d\n",
+                s->ofmt_ctx->oformat->video_codec);
+            break;
+        }
+
+        out_stream = avformat_new_stream(s->ofmt_ctx, s->codec);
+        if (!out_stream) {
+            av_log(ctx, AV_LOG_ERROR, "Failed allocating output stream\n");
+            ret = AVERROR_UNKNOWN;
+            break;
+        }
+
+        //Write file header
+        ret = avformat_write_header(s->ofmt_ctx, NULL);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "avformat_write_header is fail:%d\n", ret);
+            break;
+        }
+
+        s->codec_ctx = avcodec_alloc_context3(s->codec);
+        if (!s->codec_ctx)
+            break;
+        s->codec_ctx->width = frame->width;
+        s->codec_ctx->height = frame->height;
+        s->codec_ctx->pix_fmt = s->codec->pix_fmts[0];
+        s->codec_ctx->time_base = (AVRational) { 1, 1 };
+
+        if ((ret = avcodec_open2(s->codec_ctx, s->codec, NULL)) < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Cannot open video encoder:%d\n", ret);
+            break;
+        }
+
+        return ret;
+    } while (0);
+
+    snapshot_close(ctx);
+
+    return ret;
+}
+
+static int snapshot_save(AVFilterContext *ctx, AVFrame* frame) {
+    int ret = 0;
+    SelectContext *s = ctx->priv;
+    int get_out_frame = 0;
+
+    ret = snapshot_open(ctx, frame);
+    if (ret < 0)
+        return ret;
+
+    ret = avcodec_encode_video2(s->codec_ctx, s->out_packet, frame, &get_out_frame);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Cannot open video encoder:%d\n", ret);
+        snapshot_close(ctx);
+        return ret;
+    }
+
+    if (get_out_frame)
+    {
+        ret = av_interleaved_write_frame(s->ofmt_ctx, s->out_packet);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Error muxing packet\n");
+        }
+        //Write file trailer
+        av_write_trailer(s->ofmt_ctx);
+        s->bEnable = 0;
+        snapshot_close(ctx);
+    }
+
+    return ret;
+}
+
+static int snapshot_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+    char *res, int res_len, int flags)
+{
+    int ret = 0;
+    SelectContext *select = ctx->priv;
+
+    if (!strcmp(cmd, "filename")) {
+        ret = av_opt_set(select, "filename", args, 0);
+        select->bEnable = 1;
+    }
+    return ret;
 }
 
 #if CONFIG_ASELECT_FILTER
@@ -524,6 +688,7 @@ AVFilter ff_vf_select = {
     .init          = select_init,
     .uninit        = uninit,
     .query_formats = query_formats,
+    .process_command = snapshot_process_command,
     .priv_size     = sizeof(SelectContext),
     .priv_class    = &select_class,
     .inputs        = avfilter_vf_select_inputs,
