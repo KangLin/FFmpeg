@@ -3488,9 +3488,6 @@ Supersampling
 
 @end table
 
-@section select
-Select frames to pass in output.
-
 @section treble
 
 Boost or cut treble (upper) frequencies of the audio using a two-pole
