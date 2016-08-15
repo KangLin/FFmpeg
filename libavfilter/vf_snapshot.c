@@ -82,6 +82,8 @@ static int snapshot_close(AVFilterContext *ctx) {
 
 static int snapshot_open(AVFilterContext *ctx, AVFrame* frame){
     int ret = 0;
+	int nFmt = 0;
+	enum AVPixelFormat format = AV_PIX_FMT_NONE;
     SnapshotContext *s = ctx->priv;
     AVStream *out_stream = NULL;
     char f[1024];
@@ -143,7 +145,18 @@ static int snapshot_open(AVFilterContext *ctx, AVFrame* frame){
             break;
         s->codec_ctx->width = frame->width;
         s->codec_ctx->height = frame->height;
-        s->codec_ctx->pix_fmt = s->codec->pix_fmts[0];
+		format = s->codec->pix_fmts[0];
+		while (-1 != s->codec->pix_fmts[nFmt])
+		{
+			if (frame->format == s->codec->pix_fmts[nFmt])
+			{
+				format = s->codec->pix_fmts[nFmt];
+				break;
+			}
+			nFmt++;
+		}
+		//av_log(ctx, AV_LOG_DEBUG, "nFmt:%d; format:%d\n", nFmt, format);
+        s->codec_ctx->pix_fmt = format;
         s->codec_ctx->time_base = (AVRational){ 1, 1 };
 
         if ((ret = avcodec_open2(s->codec_ctx, s->codec, NULL)) < 0) {
